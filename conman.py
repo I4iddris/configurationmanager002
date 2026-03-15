@@ -5,7 +5,7 @@ import re
 from datetime import datetime
 
 # --- CONFIGURATION ---
-PASSWORD = "admin123"
+PASSWORD = "odongo2735"
 SETTINGS_FILE = "settings.json"
 AUDIT_LOG_FILE = "audit_log.json"
 
