@@ -3,11 +3,23 @@ import json
 import re
 import os
 from datetime import datetime
+from pathlib import Path
 
 # --- CONFIGURATION ---
-PASSWORD = "odongo2735"
-SETTINGS_FILE = "settings.json"
-AUDIT_LOG_FILE = "audit_log.json"
+# Use environment variable or secret for password (cloud-safe)
+PASSWORD = st.secrets.get("PASSWORD", os.getenv("PASSWORD", "odongo2735"))
+SETTINGS_FILE = os.getenv("SETTINGS_FILE", "settings.json")
+AUDIT_LOG_FILE = os.getenv("AUDIT_LOG_FILE", "audit_log.json")
+
+
+# Cloud platforms may have read-only filesystems - use temp directory if needed
+def get_writable_path(filename):
+    """Get writable path for cloud environments"""
+    if os.access('.', os.W_OK):
+        return filename
+    # Fallback to temp directory for read-only filesystems
+    import tempfile
+    return os.path.join(tempfile.gettempdir(), filename)
 
 
 # --- CUSTOM CSS STYLING ---
@@ -19,15 +31,13 @@ def load_custom_css():
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         min-height: 100vh;
     }
-
     /* Container Cards */
-    .css-1r6slb0 {
+    .css-1r6slb0, .main .block-container {
         background: rgba(255, 255, 255, 0.95);
         border-radius: 15px;
         padding: 20px;
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
     }
-
     /* Metric Cards */
     .metric-card {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -38,29 +48,14 @@ def load_custom_css():
         box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
         transition: transform 0.3s ease;
     }
-    .metric-card:hover {
-        transform: translateY(-5px);
-    }
-    .metric-value {
-        font-size: 2.5em;
-        font-weight: bold;
-        margin: 10px 0;
-    }
-    .metric-label {
-        font-size: 0.9em;
-        opacity: 0.9;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-    }
-
+    .metric-card:hover { transform: translateY(-5px); }
+    .metric-value { font-size: 2.5em; font-weight: bold; margin: 10px 0; }
+    .metric-label { font-size: 0.9em; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px; }
     /* Buttons */
     .stButton > button {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        border-radius: 8px;
-        padding: 10px 25px;
-        font-weight: 600;
+        color: white; border: none; border-radius: 8px;
+        padding: 10px 25px; font-weight: 600;
         transition: all 0.3s ease;
         box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
     }
@@ -68,16 +63,6 @@ def load_custom_css():
         transform: translateY(-2px);
         box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
     }
-
-    /* Sidebar */
-    .css-1d391kg {
-        background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
-        color: white;
-    }
-    .css-1d391kg .stSelectbox > label {
-        color: white;
-    }
-
     /* Headers */
     h1, h2, h3 {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -85,48 +70,15 @@ def load_custom_css():
         -webkit-text-fill-color: transparent;
         font-weight: 700;
     }
-
-    /* Success/Error Messages */
-    .stAlert {
-        border-radius: 10px;
-        border: none;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-    }
-
-    /* Dataframe */
-    .dataframe {
-        border-radius: 10px;
-        overflow: hidden;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-    }
-
-    /* Input Fields */
-    .stTextInput > div > div > input,
-    .stSelectbox > div > div > select {
-        border-radius: 8px;
-        border: 2px solid #e0e0e0;
-        transition: border-color 0.3s ease;
-    }
-    .stTextInput > div > div > input:focus,
-    .stSelectbox > div > div > select:focus {
-        border-color: #667eea;
-    }
-
     /* Footer */
     .footer {
-        text-align: center;
-        padding: 20px;
-        color: rgba(255, 255, 255, 0.8);
-        font-size: 0.9em;
+        text-align: center; padding: 20px;
+        color: rgba(255, 255, 255, 0.8); font-size: 0.9em;
     }
-
     /* Settings Item Card */
     .setting-item {
-        background: white;
-        border-radius: 10px;
-        padding: 15px;
-        margin: 10px 0;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        background: white; border-radius: 10px; padding: 15px;
+        margin: 10px 0; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         border-left: 4px solid #667eea;
     }
     </style>
@@ -151,34 +103,20 @@ VALIDATION_RULES = {
 
 # --- DEFAULT SETTINGS ---
 DEFAULT_SETTINGS = {
-    "theme": "dark",
-    "language": "en",
-    "font_size": 14,
-    "compact_mode": True,
-    "timezone": "UTC",
-    "date_format": "MM/DD/YYYY",
-    "email_notifications": True,
-    "push_notifications": False,
-    "notification_sound": True,
-    "digest_frequency": "weekly",
-    "marketing_emails": False,
-    "two_factor_auth": False,
-    "session_timeout": 30,
-    "data_sharing": False,
-    "public_profile": True,
-    "show_online_status": True,
-    "auto_save": True,
-    "auto_update": True,
-    "cache_size_mb": 500,
-    "image_quality": "high",
-    "download_path": "/Downloads"
+    "theme": "dark", "language": "en", "font_size": 14, "compact_mode": True,
+    "timezone": "UTC", "date_format": "MM/DD/YYYY", "email_notifications": True,
+    "push_notifications": False, "notification_sound": True, "digest_frequency": "weekly",
+    "marketing_emails": False, "two_factor_auth": False, "session_timeout": 30,
+    "data_sharing": False, "public_profile": True, "show_online_status": True,
+    "auto_save": True, "auto_update": True, "cache_size_mb": 500,
+    "image_quality": "high", "download_path": "/Downloads"
 }
 
 
 # --- HELPER FUNCTIONS ---
 def parse_value(value, value_type):
     if value_type == "Boolean":
-        return value.lower() in ['true', 'yes', '1', 'on']
+        return str(value).lower() in ['true', 'yes', '1', 'on']
     elif value_type == "Integer":
         try:
             return int(value)
@@ -189,8 +127,7 @@ def parse_value(value, value_type):
             return float(value)
         except ValueError:
             return None
-    else:
-        return str(value)
+    return str(value)
 
 
 def get_type_name(value):
@@ -200,25 +137,18 @@ def get_type_name(value):
         return "Integer"
     elif isinstance(value, float):
         return "Float"
-    else:
-        return "String"
+    return "String"
 
 
 def get_type_icon(value_type):
-    icons = {"Boolean": "🔘", "Integer": "🔢", "Float": "📊", "String": "📝"}
-    return icons.get(value_type, "📌")
-
-
-def get_action_icon(action):
-    icons = {"ADD": "➕", "UPDATE": "✏️", "DELETE": "🗑️", "RESET": "🔄", "IMPORT": "📤"}
-    return icons.get(action, "📋")
+    return {"Boolean": "🔘", "Integer": "🔢", "Float": "📊", "String": "📝"}.get(value_type, "📌")
 
 
 # --- LOGIC CLASS ---
 class SettingsManager:
     def __init__(self, filename=SETTINGS_FILE, log_file=AUDIT_LOG_FILE):
-        self.filename = filename
-        self.log_file = log_file
+        self.filename = get_writable_path(filename)
+        self.log_file = get_writable_path(log_file)
         self.settings = self.load()
         self.audit_log = self.load_log()
 
@@ -227,7 +157,7 @@ class SettingsManager:
             try:
                 with open(self.filename, 'r') as f:
                     return json.load(f)
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, PermissionError):
                 return DEFAULT_SETTINGS.copy()
         return DEFAULT_SETTINGS.copy()
 
@@ -241,17 +171,28 @@ class SettingsManager:
         return []
 
     def save(self):
-        with open(self.filename, 'w') as f: json.dump(self.settings, f, indent=4)
+        try:
+            with open(self.filename, 'w') as f:
+                json.dump(self.settings, f, indent=4)
+            return True
+        except PermissionError:
+            st.warning("⚠️ Settings saved to session only (read-only filesystem)")
+            return False
+        except Exception as e:
+            st.error(f"❌ Save error: {e}")
+            return False
 
     def save_log(self):
-        with open(self.log_file, 'w') as f: json.dump(self.audit_log, f, indent=4)
+        try:
+            with open(self.log_file, 'w') as f:
+                json.dump(self.audit_log, f, indent=4)
+        except:
+            pass  # Silent fail for logs in cloud
 
     def log_action(self, action, key, details=""):
         entry = {
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "action": action,
-            "key": key,
-            "details": details
+            "action": action, "key": key, "details": details
         }
         self.audit_log.insert(0, entry)
         if len(self.audit_log) > 50: self.audit_log.pop()
@@ -259,40 +200,31 @@ class SettingsManager:
 
     def validate_setting(self, key, value, value_type):
         key_lower = key.lower()
-        if key_lower not in VALIDATION_RULES:
-            return True, "OK"
+        if key_lower not in VALIDATION_RULES: return True, "OK"
         rules = VALIDATION_RULES[key_lower]
-        if rules.get("type") != value_type:
-            return False, f"Expected type: {rules['type']}"
+        if rules.get("type") != value_type: return False, f"Expected type: {rules['type']}"
         if value_type in ["Integer", "Float"]:
             num_value = parse_value(value, value_type)
-            if num_value is None:
-                return False, "Invalid number"
-            if "min" in rules and num_value < rules["min"]:
-                return False, rules.get("error", f"Value must be >= {rules['min']}")
-            if "max" in rules and num_value > rules["max"]:
-                return False, rules.get("error", f"Value must be <= {rules['max']}")
-        if "allowed" in rules:
-            if value.lower() not in [a.lower() for a in rules["allowed"]]:
-                return False, rules.get("error", f"Must be one of: {rules['allowed']}")
-        if "pattern" in rules:
-            if not re.match(rules["pattern"], value):
-                return False, rules.get("error", "Invalid format")
-        if "min_length" in rules:
-            if len(value) < rules["min_length"]:
-                return False, rules.get("error", f"Must be at least {rules['min_length']} characters")
+            if num_value is None: return False, "Invalid number"
+            if "min" in rules and num_value < rules["min"]: return False, rules.get("error",
+                                                                                    f"Value must be >= {rules['min']}")
+            if "max" in rules and num_value > rules["max"]: return False, rules.get("error",
+                                                                                    f"Value must be <= {rules['max']}")
+        if "allowed" in rules and value.lower() not in [a.lower() for a in rules["allowed"]]:
+            return False, rules.get("error", f"Must be one of: {rules['allowed']}")
+        if "pattern" in rules and not re.match(rules["pattern"], value):
+            return False, rules.get("error", "Invalid format")
+        if "min_length" in rules and len(str(value)) < rules["min_length"]:
+            return False, rules.get("error", f"Must be at least {rules['min_length']} characters")
         return True, "Valid"
 
     def add_setting(self, key, value, value_type="String"):
         key_lower = str(key).lower()
-        if key_lower in self.settings:
-            return False, f"Setting '{key_lower}' already exists!"
+        if key_lower in self.settings: return False, f"Setting '{key_lower}' already exists!"
         is_valid, message = self.validate_setting(key, value, value_type)
-        if not is_valid:
-            return False, f"Validation failed: {message}"
+        if not is_valid: return False, f"Validation failed: {message}"
         parsed_value = parse_value(value, value_type)
-        if parsed_value is None and value_type in ["Integer", "Float"]:
-            return False, f"Invalid {value_type} value!"
+        if parsed_value is None and value_type in ["Integer", "Float"]: return False, f"Invalid {value_type} value!"
         self.settings[key_lower] = parsed_value
         self.save()
         self.log_action("ADD", key_lower, f"Type: {value_type}, Value: {parsed_value}")
@@ -300,15 +232,12 @@ class SettingsManager:
 
     def update_setting(self, key, value, value_type="String"):
         key_lower = str(key).lower()
-        if key_lower not in self.settings:
-            return False, f"Setting '{key_lower}' does not exist!"
+        if key_lower not in self.settings: return False, f"Setting '{key_lower}' does not exist!"
         is_valid, message = self.validate_setting(key, value, value_type)
-        if not is_valid:
-            return False, f"Validation failed: {message}"
+        if not is_valid: return False, f"Validation failed: {message}"
         old_value = self.settings[key_lower]
         parsed_value = parse_value(value, value_type)
-        if parsed_value is None and value_type in ["Integer", "Float"]:
-            return False, f"Invalid {value_type} value!"
+        if parsed_value is None and value_type in ["Integer", "Float"]: return False, f"Invalid {value_type} value!"
         self.settings[key_lower] = parsed_value
         self.save()
         self.log_action("UPDATE", key_lower, f"{old_value} -> {parsed_value}")
@@ -332,8 +261,7 @@ class SettingsManager:
     def import_settings(self, uploaded_data):
         try:
             data = json.load(uploaded_data)
-            if not isinstance(data, dict):
-                return False, "Invalid JSON structure."
+            if not isinstance(data, dict): return False, "Invalid JSON structure."
             self.settings = data
             self.save()
             self.log_action("IMPORT", "FILE", "Settings imported from upload")
@@ -355,12 +283,13 @@ class SettingsManager:
 def check_password():
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
-    if st.session_state.authenticated:
-        return True
+    if st.session_state.authenticated: return True
+
     st.markdown("<h1 style='text-align: center; color: white;'>🔐 Secure Login</h1>", unsafe_allow_html=True)
     st.markdown(
-        "<p style='text-align: center; color: rgba(255,255,255,0.9);'>Enter your password to access the Settings Manager</p>",
+        "<p style='text-align: center; color: rgba(255,255,255,0.9);'>Enter password to access Settings Manager</p>",
         unsafe_allow_html=True)
+
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         password = st.text_input("Password", type="password", placeholder="Enter password...",
@@ -400,15 +329,13 @@ def render_setting_item(key, value, value_type):
                 <strong style="color: #667eea;">{icon} {key}</strong>
                 <div style="color: #666; font-size: 0.9em; margin-top: 5px;">Value: {value} {status}</div>
             </div>
-            <div style="background: #f0f0f0; padding: 5px 10px; border-radius: 5px; font-size: 0.8em;">
-                {value_type}
-            </div>
+            <div style="background: #f0f0f0; padding: 5px 10px; border-radius: 5px; font-size: 0.8em;">{value_type}</div>
         </div>
     </div>
     """
 
 
-# --- WEB INTERFACE ---
+# --- MAIN APP ---
 def main():
     st.set_page_config(page_title="⚙️ Settings Manager", page_icon="🎨", layout="wide")
     load_custom_css()
@@ -425,10 +352,9 @@ def main():
                               ["📋 View Settings", "➕ Add Setting", "✏️ Update Setting", "🗑️ Delete Setting",
                                "📤 Import Settings", "🔄 Reset to Defaults", "📜 Audit Log"])
         st.markdown("---")
-        if st.button("🚪 Logout", use_container_width=True):
-            logout()
+        if st.button("🚪 Logout", use_container_width=True): logout()
         st.markdown(
-            "<div style='text-align: center; color: rgba(255,255,255,0.6); font-size: 0.8em; margin-top: 20px;'>v2.0 Professional</div>",
+            "<div style='text-align: center; color: rgba(255,255,255,0.6); font-size: 0.8em; margin-top: 20px;'>v2.0 Cloud-Ready</div>",
             unsafe_allow_html=True)
 
     # Header
@@ -455,56 +381,36 @@ def main():
         st.markdown(render_metric_card("Numbers", summary["numbers"], "🔢"), unsafe_allow_html=True)
     with col4:
         st.markdown(render_metric_card("Strings", summary["strings"], "📝"), unsafe_allow_html=True)
-
     st.markdown("---")
 
-    # --- VIEW SETTINGS ---
+    # === VIEW SETTINGS ===
     if action == "📋 View Settings":
         st.markdown("<h2>📋 Current Configuration</h2>", unsafe_allow_html=True)
         search_term = st.text_input("🔍 Search Settings...", placeholder="Type to filter settings...")
+        display_settings = {k: v for k, v in manager.settings.items() if
+                            search_term.lower() in k.lower()} if search_term else manager.settings
 
-        display_settings = manager.settings
-        if search_term:
-            display_settings = {k: v for k, v in manager.settings.items() if search_term.lower() in k.lower()}
-            if display_settings:
-                st.success(f"✅ Found {len(display_settings)} settings matching '{search_term}'")
-            else:
-                st.warning(f"⚠️ No settings found matching '{search_term}'")
-
-        if not display_settings:
+        if search_term and not display_settings:
+            st.warning(f"⚠️ No settings found matching '{search_term}'")
+        elif not display_settings:
             st.info("📭 No settings available. Add some or reset to defaults!")
         else:
-            # Organize by type with cards
-            bool_settings = {k: v for k, v in display_settings.items() if isinstance(v, bool)}
-            num_settings = {k: v for k, v in display_settings.items() if isinstance(v, (int, float))}
-            str_settings = {k: v for k, v in display_settings.items() if isinstance(v, str)}
-
-            if bool_settings:
-                st.markdown("### 🔘 Boolean Settings")
-                for k, v in bool_settings.items():
-                    st.markdown(render_setting_item(k, v, "Boolean"), unsafe_allow_html=True)
-
-            if num_settings:
-                st.markdown("### 🔢 Numeric Settings")
-                for k, v in num_settings.items():
-                    st.markdown(render_setting_item(k, v, get_type_name(v)), unsafe_allow_html=True)
-
-            if str_settings:
-                st.markdown("### 📝 String Settings")
-                for k, v in str_settings.items():
-                    st.markdown(render_setting_item(k, v, "String"), unsafe_allow_html=True)
-
+            for vtype, label, icon in [("bool", "Boolean Settings", "🔘"), ("num", "Numeric Settings", "🔢"),
+                                       ("str", "String Settings", "📝")]:
+                filtered = {k: v for k, v in display_settings.items() if (
+                    isinstance(v, bool) if vtype == "bool" else isinstance(v, (int,
+                                                                               float)) if vtype == "num" else isinstance(
+                        v, str))}
+                if filtered:
+                    st.markdown(f"### {icon} {label}")
+                    for k, v in filtered.items():
+                        st.markdown(render_setting_item(k, v, get_type_name(v)), unsafe_allow_html=True)
             st.markdown("---")
-            json_str = json.dumps(manager.settings, indent=4)
-            st.download_button(
-                label="📥 Download Settings Backup",
-                data=json_str,
-                file_name=f"settings_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                mime="application/json",
-                use_container_width=True
-            )
+            st.download_button(label="📥 Download Settings Backup", data=json.dumps(manager.settings, indent=4),
+                               file_name=f"settings_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                               mime="application/json", use_container_width=True)
 
-    # --- ADD SETTING ---
+    # === ADD SETTING ===
     elif action == "➕ Add Setting":
         st.markdown("<h2>➕ Add New Setting</h2>", unsafe_allow_html=True)
         with st.form("add_form", clear_on_submit=True):
@@ -513,27 +419,20 @@ def main():
                 key = st.text_input("Setting Key", placeholder="e.g., max_users")
             with col2:
                 value_type = st.selectbox("Data Type", ["String", "Boolean", "Integer", "Float"])
-
-            # Show validation hints
             if key and key.lower() in VALIDATION_RULES:
-                rule = VALIDATION_RULES[key.lower()]
-                st.info(f"📋 **Validation Rules:** {rule.get('error', 'See documentation')}")
-
+                st.info(f"📋 **Validation:** {VALIDATION_RULES[key.lower()].get('error', 'See docs')}")
             value = st.text_input("Setting Value", placeholder="Enter value...")
-            submitted = st.form_submit_button("💾 Add Setting", use_container_width=True)
-
-            if submitted:
+            if st.form_submit_button("💾 Add Setting", use_container_width=True):
                 if not key or not value:
                     st.error("❌ Both Key and Value are required!")
                 else:
                     success, msg = manager.add_setting(key, value, value_type)
                     if success:
-                        st.success(f"✅ {msg}")
-                        st.rerun()
+                        st.success(f"✅ {msg}"); st.rerun()
                     else:
                         st.error(f"❌ {msg}")
 
-    # --- UPDATE SETTING ---
+    # === UPDATE SETTING ===
     elif action == "✏️ Update Setting":
         st.markdown("<h2>✏️ Update Existing Setting</h2>", unsafe_allow_html=True)
         if not manager.settings:
@@ -543,118 +442,80 @@ def main():
                 selected_key = st.selectbox("Select Setting", list(manager.settings.keys()))
                 current_value = manager.settings[selected_key]
                 current_type = get_type_name(current_value)
-
-                st.info(f"📌 **Current Value:** `{current_value}` | **Type:** {current_type}")
-
+                st.info(f"📌 **Current:** `{current_value}` | **Type:** {current_type}")
                 if selected_key.lower() in VALIDATION_RULES:
-                    rule = VALIDATION_RULES[selected_key.lower()]
-                    st.warning(f"⚠️ **Validation Rules:** {rule.get('error', 'See documentation')}")
-
+                    st.warning(f"⚠️ **Rules:** {VALIDATION_RULES[selected_key.lower()].get('error', 'See docs')}")
                 value_type = st.selectbox("Data Type", ["String", "Boolean", "Integer", "Float"],
                                           index=["String", "Boolean", "Integer", "Float"].index(current_type))
                 value = st.text_input("New Value", value=str(current_value))
-
-                submitted = st.form_submit_button("✏️ Update Setting", use_container_width=True)
-
-                if submitted:
+                if st.form_submit_button("✏️ Update Setting", use_container_width=True):
                     success, msg = manager.update_setting(selected_key, value, value_type)
                     if success:
-                        st.success(f"✅ {msg}")
-                        st.rerun()
+                        st.success(f"✅ {msg}"); st.rerun()
                     else:
                         st.error(f"❌ {msg}")
 
-    # --- DELETE SETTING ---
+    # === DELETE SETTING ===
     elif action == "🗑️ Delete Setting":
         st.markdown("<h2>🗑️ Delete Setting</h2>", unsafe_allow_html=True)
         if not manager.settings:
             st.warning("⚠️ No settings to delete.")
         else:
-            keys_list = list(manager.settings.keys())
-            key_to_delete = st.selectbox("Select Setting to Delete", keys_list)
-
-            current_value = manager.settings[key_to_delete]
-            st.error(f"⚠️ **Warning:** You are about to delete **`{key_to_delete}`** with value **`{current_value}`**")
-
-            confirm = st.checkbox("I understand this action cannot be undone")
+            key_to_delete = st.selectbox("Select Setting to Delete", list(manager.settings.keys()))
+            st.error(f"⚠️ Deleting **`{key_to_delete}`** = **`{manager.settings[key_to_delete]}`**")
+            confirm = st.checkbox("I understand this cannot be undone")
             if st.button("🗑️ Confirm Delete", use_container_width=True, disabled=not confirm):
                 success, msg = manager.delete_setting(key_to_delete)
                 if success:
-                    st.success(f"✅ {msg}")
-                    st.rerun()
+                    st.success(f"✅ {msg}"); st.rerun()
                 else:
                     st.error(f"❌ {msg}")
 
-    # --- IMPORT SETTINGS ---
+    # === IMPORT SETTINGS ===
     elif action == "📤 Import Settings":
         st.markdown("<h2>📤 Import Settings from File</h2>", unsafe_allow_html=True)
-        st.warning("⚠️ **Warning:** This will overwrite all current settings! Make sure to backup first.")
-
+        st.warning("⚠️ **Warning:** This will overwrite all current settings!")
         uploaded_file = st.file_uploader("📁 Choose a JSON file", type="json")
+        if uploaded_file and st.button("📤 Upload & Import", use_container_width=True):
+            success, msg = manager.import_settings(uploaded_file)
+            if success:
+                st.success(f"✅ {msg}"); st.rerun()
+            else:
+                st.error(f"❌ {msg}")
 
-        if uploaded_file is not None:
-            st.info(f"📄 Selected: **{uploaded_file.name}**")
-            if st.button("📤 Upload & Import", use_container_width=True):
-                success, msg = manager.import_settings(uploaded_file)
-                if success:
-                    st.success(f"✅ {msg}")
-                    st.rerun()
-                else:
-                    st.error(f"❌ {msg}")
-
-    # --- RESET TO DEFAULTS ---
+    # === RESET TO DEFAULTS ===
     elif action == "🔄 Reset to Defaults":
         st.markdown("<h2>🔄 Reset All Settings</h2>", unsafe_allow_html=True)
-        st.error("⚠️ **Warning:** This will delete all custom settings and restore factory defaults!")
-
-        st.markdown("### Default Settings Preview:")
+        st.error("⚠️ **Warning:** This will delete all custom settings!")
+        st.markdown("### Default Settings Preview:");
         st.json(DEFAULT_SETTINGS)
-
         confirm = st.checkbox("I understand all custom settings will be lost")
         if st.button("🔄 Confirm Reset", use_container_width=True, disabled=not confirm, type="secondary"):
             success, msg = manager.reset_to_defaults()
-            if success:
-                st.success(f"✅ {msg}")
-                st.rerun()
+            if success: st.success(f"✅ {msg}"); st.rerun()
 
-    # --- AUDIT LOG ---
+    # === AUDIT LOG ===
     elif action == "📜 Audit Log":
         st.markdown("<h2>📜 Activity Audit Log</h2>", unsafe_allow_html=True)
         if not manager.audit_log:
             st.info("📭 No activity recorded yet.")
         else:
-            # Style the dataframe
-            st.dataframe(
-                manager.audit_log,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "timestamp": "🕐 Timestamp",
-                    "action": "🔧 Action",
-                    "key": "📌 Setting Key",
-                    "details": "📝 Details"
-                }
-            )
-
+            st.dataframe(manager.audit_log, use_container_width=True, hide_index=True,
+                         column_config={"timestamp": "🕐 Timestamp", "action": "🔧 Action", "key": "📌 Setting Key",
+                                        "details": "📝 Details"})
             col1, col2 = st.columns(2)
             with col1:
                 if st.button("🗑️ Clear Log", use_container_width=True):
-                    manager.audit_log = []
-                    manager.save_log()
+                    manager.audit_log = [];
+                    manager.save_log();
                     st.rerun()
             with col2:
-                log_json = json.dumps(manager.audit_log, indent=4)
-                st.download_button(
-                    label="📥 Download Log",
-                    data=log_json,
-                    file_name=f"audit_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                    mime="application/json",
-                    use_container_width=True
-                )
+                st.download_button(label="📥 Download Log", data=json.dumps(manager.audit_log, indent=4),
+                                   file_name=f"audit_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                                   mime="application/json", use_container_width=True)
 
-    # Footer
     st.markdown("---")
-    st.markdown("<div class='footer'>🔒 Secure Settings Manager v2.0 | Built with ❤️ using Streamlit & Python</div>",
+    st.markdown("<div class='footer'>🔒 Secure Settings Manager v2.0 ☁️ | Built with ❤️ using Streamlit</div>",
                 unsafe_allow_html=True)
 
 
